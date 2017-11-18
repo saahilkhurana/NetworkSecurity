@@ -1,0 +1,53 @@
+Test Environment: 
+Distributor ID:	Ubuntu
+Description:	Ubuntu 16.04.3 LTS
+Release:	16.04
+Codename:	xenial
+
+Compiler Version:   gcc version 5.4.0
+
+References:
+http://www.cs.rpi.edu/~moorthy/Courses/os98/Pgms/socket.html
+http://www.cs.columbia.edu/~jae/4118/L08-adv-io.html
+http://beej.us/guide/bgnet/output/html/multipage/fcntlman.html
+Open ssl library functions
+
+Commands to run the program:
+make clean
+make
+Server side:  ./pbproxy -k mykey -l 2222 localhost 22
+Client side:   ssh -o "ProxyCommand ./pbproxy -k mykey localhost 2222" localhost
+In the above commands, The ssh server runs on port 22, the pbproxy server will connect to port 22 of ssh as a client and will listen for connections on port 2222. All the clients who want to connect to the pbproxy server will directly connect to port 2222. After connection is established between pbproxy client and pbproxy server it is relayed to the ssh server.
+
+
+My implementation includes:
+1. All the required functionality as mentioned in the question
+2. I/O multiplexing using fcntl
+3. Encryption and description is done using AES in CTR mode from OpenSSL library
+
+In order to compile you have to install openssl. After installing, you could use "make" to compile the code.
+The code makes use of aes.h header file for encryption decryption foun in /usr/include/openssl.
+The makefile compiles the code and generates an object file called pbproxy. Since, the code is modularized into myclient.c, pbproxy.c, server.c and header.h. The makefile uses -
+gcc myclient.c pbproxy.c server.c -o pbproxy -lcrypto
+
+Working explained:
+
+1. Main function:
+
+i). Takes the input command arguments using getopt.
+ii). It determines if the proxy is invoked as server or client based on whether option '-l' was received or not.
+iii). For client mode it calls the function connectToProxy() in myclient.c and server mode will connect to connectToservice() in server.c
+iv) reads a key from a file called mykey or generates a key if the user misses to give a key, this key is passed to myclient.c and server.c files respectively.
+
+2. Pbproxy Client Mode:
+i). It creates a socket using pbproxys ip and port to connect to the pbproxy server.
+ii). Performs I/O multiplexing. I/O multiplexing is ensured by setting stdin and socket connection to non-blocking mode to avoid blocking forever using fcntl flag setting.
+iii). The key is encrypted using the aes_set_encrypt_key method(), A random iv of size 8 bytes is generated per client server session. The first message that goes from client to the server is the IV. then the counter of IV is set. For subsequent messages, the counter of the iv keeps incrementing and the messages are encrypted/decrypted using the updated IV.
+iv). The client encrypts all messages from stdin and sends it to pbproxy server, it reads continuously from the pbrpoxy socket, it decrepts the message it reads from the pbproxy server socket and prints it to STD output.
+
+3. Pbproxy Server Mode:
+i). Creates 2 sockets one for connecting to the ssh/remote server and one for listening, binding and accepting pbproxy client requests.
+ii). It accepts a connection from the client and then connects to the ssh.
+iii). It reads from the socket connecting the pbproxy client and pbproxy server, decrypts the message and then writes that message on the socket of the ssh. It basically relays all the messages it receives from the pbproxy client to the ssh server.
+iv). I/O multiplexing is ensured by setting socket connection and ssh connection to non-blocking mode to avoid blocking forever using fcntl flag setting.
+v). Similarly, it listens on the socket between pbproxy server and ssh, reads it, encrypts it and writes the encrypted message on the socket connecting the pbproxy server and pbproxy client. The client will eventually read this message decrypt it and print it to the STD output.
